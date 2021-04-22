@@ -1,0 +1,817 @@
+### A Pluto.jl notebook ###
+# v0.14.2
+
+using Markdown
+using InteractiveUtils
+
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    quote
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : missing
+        el
+    end
+end
+
+# ╔═╡ db4c1f10-7c37-4513-887a-2467ce673458
+begin
+	using Pkg   
+	Pkg.add.(["CSV", "DataFrames", "PlutoUI", "Shapefile", "ZipFile", "LsqFit", "Plots"])
+
+	using CSV
+	using DataFrames
+	using PlutoUI
+	using Shapefile
+	using ZipFile
+	using LsqFit
+	using Plots
+end
+
+# ╔═╡ cbd9c1aa-fc37-11ea-29d9-e3361406796f
+using Dates
+
+# ╔═╡ 0f87cec6-fc31-11ea-23d2-395e61f38b6f
+md"# Propagacija epidemije"
+
+# ╔═╡ 19f4da16-fc31-11ea-0de9-1dbe668b862d
+md"
+Krenimo od analiziranja nekih podataka koji su sada dostupni na trenutnoj pandemiji COVID-19.
+"
+
+# ╔═╡ d3398953-afee-4989-932c-995c3ffc0c40
+md"""
+## Istraživanje COVID-19 podataka
+"""
+
+# ╔═╡ efa281da-cef9-41bc-923e-625140ce5a07
+md"""
+U ovoj ćemo bilježnici istražiti i analizirati podatke o pandemiji COVID-19. Cilj je koristiti alate Julia za analizu i vizualizaciju podataka na različite načine.
+
+Na kraju bilježnice napravit ćemo sljedeću vizualizaciju pomoću Julije i Plutona:
+"""
+
+# ╔═╡ 7617d970-fce4-11ea-08ba-c7eba3e17f62
+@bind day Clock(0.5)
+
+# ╔═╡ e0493940-8aa7-4733-af72-cd6bc0e37d92
+md"""
+## Download i učitavanje podataka
+"""
+
+# ╔═╡ 64d9bcea-7c85-421d-8f1e-17ea8ee694da
+url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv";
+
+# ╔═╡ c460b0c3-6d3b-439b-8cc7-1c58d6547f51
+download(url, "covid_data.csv");
+
+# ╔═╡ a7369222-fc20-11ea-314d-4d6b0f0f72eb
+md"Trebat će nam nekoliko novih paketa. Podaci su u CSV formatu, tj. *C* omma- *S* odvojeni *V* alues. Ovo je uobičajeni format podataka u kojem su promatranja, tj. Podatkovne točke, odvojena na različitim linijama. Unutar svakog retka različiti podaci za to promatranje odvojeni su zarezima ili drugim interpunkcijskim znakovima (moguće razmacima i tabulatorima)."
+
+# ╔═╡ 1620aa9d-7dcd-4686-b7e4-a72cebe315ed
+md"""
+Podatke iz CSV-a možemo učitati pomoću funkcije `Datoteka` iz paketa` CSV.jl`, a zatim ih pretvoriti u `DataFrame`:
+"""
+
+# ╔═╡ 38344160-fc27-11ea-220e-95aa00e4b083
+begin
+	csv_data = CSV.File("covid_data.csv");   
+	data = DataFrame(csv_data)   # it is common to use `df` as a variable name
+end
+
+# ╔═╡ ad43cea2-fc28-11ea-2bc3-a9d81e3766f4
+md"`DataFrame` je standardni način pohrane ** heterogenih podataka ** u Juliji, tj. Tablica koja se sastoji od stupaca različitih vrsta. Kao što možete vidjeti iz prikaza gornjeg objekta `DataFrame`, svaki stupac ima pridruženi tip, ali različiti stupci imaju različite tipove, što odražava vrstu podataka u tom stupcu.
+
+U našem slučaju, nazivi zemalja pohranjeni su kao `String`s, njihova širina i dužina kao` Float64` i (kumulativni) slučaj računa se za svaki dan kao `Int64`.
+."
+
+# ╔═╡ 74634537-e2da-4427-96c6-46a3e48364b6
+md" Trebat ćemo urediti te podatke. Npr, podaci za Algeriju su sumirani i u jednom retku dok je Australija podijeljena na provincije - trebali bismo zbrojiti rezultate svih provincija da imamo jedan rezultat za Australiju. Takve i slične stvari treba detektirati i popraviti da bismo mogli pravilno koristiti df (skraćenica za DataFrame)"
+
+# ╔═╡ fab64d86-fc28-11ea-0ae1-3ba1b9a14759
+md"## Korištenje podataka"
+
+# ╔═╡ 3519cf96-fc26-11ea-3386-d97c61ea1b85
+md"""Budući da moramo manipulirati stupcima, preimenujmo ih u nešto kraće. To možemo učiniti ** na mjestu **, tj. Modificirajući izvorni` DataFrame` ili ** izvan mjesta **, stvarajući novi `DataFrame `. Konvencija u Juliji je da funkcije koje mijenjaju svoj argument imaju ime koje završava s`! `(Često se izgovara" prasak ").
+
+Možemo koristiti funkciju `first` (navikli smo u ostalim jezicima da se ta funkcija zove head() ) da bismo vidjeli samo prvih nekoliko redaka podataka.
+"""
+
+# ╔═╡ a054e048-4fea-487c-9d06-463723c7151c
+begin
+	data_2 = rename(data, 1 => "province", 2 => "country", 3 => "latitude", 4 => "longitude")   
+	first(data_2)
+end
+
+# ╔═╡ e9ad97b6-fdef-4f48-bd32-634cfd2ce0e6
+begin
+	rename!(data, 1 => "province", 2 => "country", 3 => "latitude", 4 => "longitude") 
+	first(data)
+end
+
+# ╔═╡ aaa7c012-fc1f-11ea-3c6c-89630affb1db
+md"## Izdvajanje korisnih informacija"
+
+# ╔═╡ b0eb3918-fc1f-11ea-238b-7f5d23e424bb
+md"Kako možemo izvući popis svih zemalja? Imena država nalaze se u drugom stupcu.
+
+Za neke svrhe možemo zamisliti `DataFrame`.kao matricu i koristiti sličnu sintaksu. Na primjer, možemo izdvojiti drugi stupac:
+"
+
+# ╔═╡ 68f76d3b-b398-459d-bf39-20bf300dcaa2
+all_countries = data[:, "country"]
+
+# ╔═╡ 20e144f2-fcfb-11ea-010c-97e21eb0d231
+all_countries2 = data[:, :country]
+
+# ╔═╡ 2ec98a16-fcfb-11ea-21ad-15f2f5e68248
+all_countries3 = data[:, 2]
+
+# ╔═╡ 382cfc62-fcfb-11ea-26aa-2984d0449dcc
+data[5:8, 2]
+
+# ╔═╡ 34440afc-fc2e-11ea-0484-5b47af235bad
+md"Ispada da su neke zemlje podijeljene na provincije, pa u koloni `zemlja` postoje ponavljanja koja možemo eliminirati funkcijom` jedinstvena`:"
+
+# ╔═╡ 79ba0433-2a31-475a-87c9-14103ebbff16
+countries = unique(all_countries)
+
+# ╔═╡ 34ab4a70-0f33-456f-9d65-a239429d784b
+md"Pregledajmo pomoću slidera sve zemlje redom : "
+
+# ╔═╡ 5c1ec9ae-fc2e-11ea-397d-937c7ab1edb2
+@bind i Slider(1:length(countries), show_value=true)
+
+# ╔═╡ a39589ee-20e3-4f22-bf81-167fd815f6f9
+md"$(Text(countries[i]))"
+
+# ╔═╡ 9484ea9e-fc2e-11ea-137c-6da8212da5bd
+md"[Ovdje smo koristili **interpolaciju niza** s `$` za stavljanje teksta u Markdown niz.]"
+
+# ╔═╡ bcc95a8a-fc2e-11ea-2ccd-3bece42a08e6
+md"Također može se upotrijebiti` Select` da bi umjesto toga dobili padajući izbornik:"
+
+# ╔═╡ ada3ceb4-fc2e-11ea-2cbf-399430fa18b5
+@bind country Select(countries)
+
+# ╔═╡ 1633abe8-fc2f-11ea-2c7e-21b3348a3569
+md"""Kako možemo izvući podatke za određenu zemlju? Prvo moramo znati točan naziv države. Npr. je li SAD napisan kao "SAD" ili "Sjedinjene Države"?
+
+Mogli bismo se pomicati da bismo to saznali ili **filtrirati** podatke da bismo pogledali samo njihov uzorak, na primjer one zemlje koje počinju slovom "U".
+
+Jedan od načina za to je razumijevanje niza:"""
+
+# ╔═╡ ed383524-e0c0-4da2-9a98-ca75aadd2c9e
+md"""
+Razumijevanje niza:
+"""
+
+# ╔═╡ 90810d7e-fcfb-11ea-396a-35543dcc1e06
+startswith("david", "d")
+
+# ╔═╡ 977e1a2c-fcfb-11ea-08e9-cd656a631778
+startswith("hello", "d")
+
+# ╔═╡ 9ee79840-30ff-4c92-97f4-e178caceceaf
+U_countries = [startswith(country, "U") for country in all_countries]
+
+# ╔═╡ 99d5a138-fc30-11ea-2977-71732ca3aead
+length(U_countries)
+
+# ╔═╡ 450b4902-fc30-11ea-321d-29faf6188ff5
+md"Imajmo na umu da ovo vraća niz logičkih vrijednosti iste dužine kao i vektor `all_countries`. Sada to možemo koristiti za indeksiranje u `DataFrame`:"
+
+# ╔═╡ 4f423a75-43da-486f-ac2a-7220032dac9f
+data[U_countries, :]
+
+# ╔═╡ a8b2db96-fc30-11ea-2eea-b938a3a430fb
+md"""Vidimo da je ispravan pravopis "US". (I imajte na umu kako su različite provincije u Velikoj Britaniji odvojene.)"""
+
+# ╔═╡ c400ce4e-fc30-11ea-13b1-b54cf8f5630e
+md"Sada bismo željeli izvući podatke samo za SAD. Kako možemo pristupiti ispravnom retku tablice? Ponovo možemo filtrirati naziv države. Ljepši način za to je upotreba funkcije `filtra`.
+
+Ovo je **funkcija višeg reda**: njezin prvi argument sama je po sebi funkcija koja mora vratiti `true` ili` false`. `filter` će vratiti sve retke` DataFrame-a` koji zadovoljavaju taj **predikat**:
+"
+
+# ╔═╡ 7b2496b0-fc35-11ea-0e78-473e5e8eac44
+filter(x -> x.country == "United Kingdom", data)
+
+# ╔═╡ 8990f13a-fc35-11ea-338f-0955eeb23c3c
+md"Ovdje smo upotrijebili **anonimnu funkciju** sa sintaksom `x -> ⋯`. Ovo je funkcija koja uzima argument `x` i vraća ono što je s desne strane strelice (` -> `)."
+
+# ╔═╡ a772eadc-fc35-11ea-3d38-4b121f88f1d7
+md"Za izdvajanje jednog retka potreban nam je **indeks** retka (tj. Koji je to brojčani red u `DataFrame`-u). Funkcija `findfirst` pronalazi prvi redak koji zadovoljava zadani predikat:"
+
+# ╔═╡ 16a79308-fc36-11ea-16e5-e1087d7ebbda
+US_row = findfirst(==("US"), all_countries)
+
+# ╔═╡ a41db8ea-f0e0-461f-a298-bdcea42a67f3
+data[US_row, :]
+
+# ╔═╡ f75e1992-fcfb-11ea-1123-b59bf888eac3
+data[US_row:US_row, :]
+
+# ╔═╡ 67eebb7e-fc36-11ea-03ef-bd6966487bb5
+md"Now we can extract the data into a standard Julia `Vector`:"
+
+# ╔═╡ 7b5db0f4-fc36-11ea-09a5-49def64f4c79
+US_data = Vector(data[US_row, 5:end])
+
+# ╔═╡ a26b8742-6a16-445a-ae77-25a4189c0f14
+
+
+# ╔═╡ f099424c-0e22-42fb-894c-d8c2a65715fb
+scatter(US_data, m=:o, alpha=0.5, ms=3, xlabel="dan", ylabel="kumulativni slučajevi", leg=false)
+
+# ╔═╡ 6a56650c-bb47-4486-8c8b-9feb06f155aa
+md"Vidimo da je u SAD-u, npr. od prvog dana mjerenja do, npr. 300-og dana, dakle negdje u rujnu, bilo oko 10 milijuna potvrđenih slučajeva "
+
+# ╔═╡ 7e7d14a2-fc37-11ea-3f1a-870ca98c4b75
+md"Imajmo na umu da u `scatter` (raspršivanje) funkciju prenosimo samo jedan vektor, pa se koordinate $x$ uzimaju kao prirodni brojevi $1$, $2$ itd.
+
+Također imajmo na umu da osi $y$ na ovoj parceli daju *kumulativne* brojeve slučajeva, tj. *Ukupan* broj potvrđenih slučajeva od početka epidemije do određenog datuma.
+"
+
+# ╔═╡ 75d2dc66-fc47-11ea-0e35-05f9cf38e901
+md"Ovo je primjer za **time series** (vremenskog niza), tj. Jedne veličine koja se mijenja tijekom vremena."
+
+# ╔═╡ b3880f40-fc36-11ea-074a-edc51adeb6f0
+md"## Korištenje datuma"
+
+# ╔═╡ 6de0800c-fc37-11ea-0d94-2b6f8f66964d
+md"Željeli bismo koristiti stvarne datume umjesto samo broja dana od početka skupljanja podataka. Datumi su navedeni u nazivima stupaca `DataFrame`-a:
+"
+
+# ╔═╡ bb6316b7-23fb-44a3-b64a-dfb71a7df011
+column_names = names(data)
+
+# ╔═╡ 0c098923-b016-4c65-9a37-6b7b56b13a0c
+date_strings = names(data)[5:end]  # korištenje String funkcije za svaki pojedini element
+
+# ╔═╡ 546a40eb-7897-485d-a1b5-c4dfae0a4861
+md"""
+Sada moramo **parse** (rasčlaniti) datumske nizove, tj. Pretvoriti iz predstavljanja niza u stvarni tip Julia koji pruža standardni paket knjižnice `Dates.jl`:
+"""
+
+# ╔═╡ 9e23b0e2-ac13-4d19-a3f9-4a655a1e9f14
+date_strings[1]
+
+# ╔═╡ 25c79620-14f4-45a7-b120-05ec72cb77e9
+date_format = Dates.DateFormat("m/d/Y")
+
+# ╔═╡ 31dc4e46-4839-4f01-b383-1a1189aeb0e6
+parse(Date, date_strings[1], date_format)
+
+# ╔═╡ ee27bd98-fc37-11ea-163c-1365e194fc2e
+md"Budući da godina nije bila ispravno prikazana u izvornim podacima, moramo je ručno popraviti:"
+
+# ╔═╡ f5c29f0d-937f-4731-8f87-0405ebc966f5
+dates = parse.(Date, date_strings, date_format) .+ Year(2000)
+
+# ╔═╡ b0e7f1c6-fce3-11ea-10e5-9101d0f861a2
+dates[day]
+
+# ╔═╡ 36c37b4d-eb23-4deb-a593-e511eccd9204
+begin
+	plot(dates, US_data, xrotation=45, leg=:topleft, 
+	    label="SAD - podaci", m=:o, ms=3, alpha=0.5)
+	
+	xlabel!("datum")
+	ylabel!("kumulativni slučajevi u SAD-u")
+	title!("Kumulativni potvrđeni sluajevi COVID-a 19 u SAD-u")
+end
+
+# ╔═╡ ebf76226-66c5-46d0-9fbd-ab4252b3e7b9
+md"Sada kada imamo datume na x-osi, puno je lakše zaključiti o brzini i tijeku rasta zaraze. Ne moramo računati koliko je 300 dana od 1. siječnja, već lijepo vidimo po mjesecima kako je zaraza napredovala."
+
+# ╔═╡ 511eb51e-fc38-11ea-0492-19532da809de
+md"## Istraživačka analiza podataka  (Exploratory data analysis) "
+
+# ╔═╡ d228e232-fc39-11ea-1569-a31b817118c4
+md"
+Rad s *kumulativnim* podacima često je manje intuitivan. Pogledajmo stvarni broj dnevnih slučajeva. Julia ima funkciju `diff` za izračunavanje razlike između uzastopnih unosa vektora:
+"
+
+# ╔═╡ dbaacbb6-fc3b-11ea-0a42-a9792e8a6c4c
+begin
+	daily_cases = diff(US_data)
+	plot(dates[2:end], daily_cases, m=:o, leg=false, xlabel="dani", ylabel="broj slučajeva u SAD-u dnevno", alpha=0.5)   # koristimo oznake "o"-oblika 
+end
+
+# ╔═╡ 19bdf146-fc3c-11ea-3c60-bf7823c43a1d
+begin
+	using Statistics
+	running_mean = [mean(daily_cases[i-6:i]) for i in 7:length(daily_cases)]
+end
+
+# ╔═╡ 12900562-fc3a-11ea-25e1-f7c91a6940e5
+md"Imajmo na umu da diskretni podaci *uvijek* trebaju biti ucrtani u točke. Linije su samo za usmjeravanje oka.
+
+Kumulativni podaci odgovaraju uzimanju integrala funkcije i predstavljaju operaciju   *smoothing*. Imajmo na umu da su kumulativni podaci doista vizualno glatkiji od dnevnih podataka.
+
+Čini se da su oscilacije u dnevnim podacima posljedica manje učestalosti javljanja vikendom. Mogli bismo to pokušati izgladiti uzimajući **moving average** (pokretni prosjek), recimo tijekom proteklog tjedna:
+"
+
+# ╔═╡ be868a52-fc3b-11ea-0b60-7fea05ffe8e9
+begin
+	plot(daily_cases, label="sirovi slučaji dnevno")
+	plot!(running_mean, m=:o, label="tjedni mean", leg=:topleft)
+end
+
+# ╔═╡ 0b01120c-fc3d-11ea-1381-8bab939e6214
+md"## Eksponencijalni rast
+
+Jednostavni modeli širenja epidemije često predviđaju razdoblje s **eksponencijalnim rastom**. Potvrđuju li to podaci?
+"
+
+# ╔═╡ 252eff18-fc3d-11ea-0c18-7b130ada882e
+md"""Vizualna provjera za to sastoji se u prikupljanju podataka s **logaritamskom skalom** na osi $y$ (ali standardnom ljestvicom na osi $x$).
+
+Ako promatramo ravnu crtu na takvoj polulogaritamskoj parceli, onda znamo da vrijedi:
+
+$$\log(y) \sim \alpha x + \beta,$$
+
+gdje koristimo $\sim$ za oznaku približne jednakosti.
+
+Uzimanje eksponencijala obje strane daje
+
+$$y \sim \exp(\alpha x + \beta),$$
+
+npr.
+
+$$y \sim c \, \mathrm{e}^{\alpha x},$$
+
+gdje je $c$ konstanta (ponekad se naziva i "predfaktor"), a $\alpha$ je eksponencijalna stopa rasta, pronađena s nagiba ravne crte na semi-log plot-u.
+"""
+
+# ╔═╡ 9626d74a-fc3d-11ea-2ab3-978dc46c0f1f
+md"""Budući da podaci sadrže neke nule, moramo ih zamijeniti s `NaN`s (" Not a Number "), što`Plots.jl` tumači kao signal za prekidanje crte"""
+
+# ╔═╡ 4358c348-91aa-4c76-a443-0a9cefce0e83
+begin
+	plot(replace(daily_cases, 0 => NaN), 
+		yscale=:log10, 
+		leg=false, m=:o)
+	
+	xlabel!("dani")
+	ylabel!("Potvrđeni slučajevi u SAD-u")
+	title!("Potvrđeni slučajevi COVID-a 19 u SAD-u")
+end
+
+# ╔═╡ 687409a2-fc43-11ea-03e0-d9a7a48165a8
+md"Zumirajmo regiju grafikona gdje rast izgleda linearno na ovom semi-log plot-u:"
+
+# ╔═╡ 4f23c8fc-fc43-11ea-0e73-e5f89d14155c
+xlims!(0, 100)
+
+# ╔═╡ 91f99062-fc43-11ea-1b0e-afe8aa8a1c3d
+exp_period = 38:60
+
+# ╔═╡ 07282688-fc3e-11ea-2f9e-5b0581061e65
+md"Vidimo da postoji razdoblje koje traje oko dana $(first(exp_period)) do otprilike $(last(exp_period)) kad krivulja gleda ravno na semi-log plotu.
+To odgovara sljedećem datumskom rasponu:"
+
+# ╔═╡ 210cee94-fc3e-11ea-1a6e-7f88270354e1
+dates[exp_period]
+
+# ╔═╡ 2f254a9e-fc3e-11ea-2c02-75ed59f41903
+md"npr. prva 3 tjedna ožujka... Srećom, nametanje lockdown-a tijekom zadnjih 10 dana ožujka (različitim danima u različitim državama SAD-a) značajno je smanjilo prijenos virusa."
+
+# ╔═╡ 84f5c776-fce0-11ea-2d52-39c51d4ab6b5
+md"## Uklapanje podataka (Data fitting)"
+
+# ╔═╡ 539c951c-fc48-11ea-2293-457b7717ea4d
+md"""
+Pokušajmo prilagoditi eksponencijalnu funkciju našim podacima u relevantnoj regiji. Upotrijebit ćemo paket Julia `LsqFit.jl` (" least-squares fit ").
+
+Ovaj nam paket omogućuje da odredimo funkciju modela koja uzima vektor podataka i vektor parametara i pronalazi najbolje prilagođavanje podacima.
+"""
+
+# ╔═╡ b33e97f2-fce0-11ea-2b4d-ffd7ed7000f8
+model(x, (c, α)) = c .* exp.(α .* x)
+
+# ╔═╡ d52fc8fe-fce0-11ea-0a04-b146ee2dbe80
+begin
+	p0 = [0.5, 0.5]  # inicijalni pogodak za parametre - ovo sami zadajemo
+
+	x_data = exp_period
+	y_data = daily_cases[exp_period]
+	
+	fit = curve_fit(model, x_data, y_data, p0)
+end;
+
+# ╔═╡ c50b5e42-fce1-11ea-1667-91c56ea80dcc
+md"Zanimaju nas koeficijenti najbolje prilagođenog modela:"
+
+# ╔═╡ 3060bfa8-fce1-11ea-1047-db0dc06485a2
+parameters = coef(fit)
+
+# ╔═╡ 62bdc04a-fce1-11ea-1724-bfc4bc4789d1
+md"Dodajemo parametre na plot"
+
+# ╔═╡ 6bc8cc20-fce1-11ea-2180-0fa69e86741f
+begin
+	plot(replace(daily_cases, 0 => NaN), 
+		yscale=:log10, 
+		leg=false, m=:o,
+		xlims=(1, 100), alpha=0.5)
+	
+	line_range = 30:70
+	plot!(line_range, model(line_range, parameters), lw=3, ls=:dash, alpha=0.7)
+	
+	xlabel!("dan")
+	ylabel!("potvrđeni slučajevi u SAD-u")
+	title!("Potvrđeni slučajevi COVIDA-19 u SAD-u")
+end
+
+# ╔═╡ 287f0fa8-fc44-11ea-2788-9f3ac4ee6d2b
+md"## Zemljopisni podaci"
+
+# ╔═╡ 3edd2a22-fc4a-11ea-07e5-55ca6d7639e8
+md"
+Naš skup podataka sadrži više informacija: zemljopisni položaj (zemljopisna širina i dužina) svake države (ili, točnije, određene točke koja je izabrana kao reprezentativna za tu zemlju).
+"
+
+# ╔═╡ c5ad4d40-fc57-11ea-23cb-e55487bc6f7a
+filter(x -> startswith(x.country, "A"), data)
+
+# ╔═╡ 57a9bb06-fc4a-11ea-2665-7f97026981dc
+md"
+Izdvojimo i zacrtajmo zemljopisne podatke. Da bismo malo smanjili vizualnu buku (*visual noise*), koristit ćemo samo :"
+
+# ╔═╡ 80138b30-fc4a-11ea-0e15-b54cf6b402df
+province = data.province
+
+# ╔═╡ 8709f208-fc4a-11ea-0203-e13eae5f0d93
+md"Ako `province` nedostaje, umjesto nje bismo trebali koristiti naziv države:"
+
+# ╔═╡ a29c8ad0-fc4a-11ea-14c7-71435769b73e
+begin
+	indices = ismissing.(province)
+	province[indices] .= all_countries[indices]
+end
+
+# ╔═╡ 4e4cca22-fc4c-11ea-12ae-2b51545799ec
+begin 
+	
+	scatter(data.longitude, data.latitude, leg=false, alpha=0.5, ms=2)
+
+	for i in 1:length(province)	
+		annotate!(data.longitude[i], data.latitude[i], text(province[i], :center, 5, color=RGBA{Float64}(0.0,0.0,0.0,0.3)))
+	end
+	
+	plot!(axis=false)
+end
+
+# ╔═╡ 16981da0-fc4d-11ea-37a2-535aa014a298
+data.latitude
+
+# ╔═╡ a9c39dbe-fc4d-11ea-2e86-4992896e2abb
+md"## Dodavanje mapa"
+
+# ╔═╡ b93b88b0-fc4d-11ea-0c45-8f64983f8b5c
+md"
+
+Također bismo željeli vidjeti obrise svake zemlje. Za to možemo koristiti, na primjer, podatke iz [Natural Earth] (https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries), koji dolaze u obliku **shape files**, dajući obrise u smislu koordinata zemljopisne širine i dužine.
+
+Oni se mogu pročitati pomoću paketa `Shapefile.jl`.
+
+Podaci su u datoteci `.zip`, pa ih nakon preuzimanja prvo moramo dekomprimirati.
+"
+
+# ╔═╡ 7ec28cd0-fc87-11ea-2de5-1959ea5dc37c
+begin
+	zipfile = download("https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/110m/cultural/ne_110m_admin_0_countries.zip")
+
+	r = ZipFile.Reader(zipfile);
+	for f in r.files
+	    println("Filename: $(f.name)")
+		open(f.name, "w") do io
+	    	write(io, read(f))
+		end
+    end
+	close(r)
+end
+
+# ╔═╡ ada44a56-fc56-11ea-2ab7-fb649be7e066
+shp_countries = Shapefile.shapes(Shapefile.Table("./ne_110m_admin_0_countries.shp"))
+
+# ╔═╡ b3e1ebf8-fc56-11ea-05b8-ed0b9e50503d
+plot!(shp_countries, alpha=0.2)
+
+# ╔═╡ f8e754ee-fc73-11ea-0c7f-cdc760ab3e94
+md"Sada bismo željeli kombinirati geografski i temporalni (vremenski) aspekt. Jedan od načina za to je animiranje vremena:"
+
+# ╔═╡ 39982810-fc76-11ea-01c3-3987cfc2fd3c
+daily = max.(1, diff(Array(data[:, 5:end]), dims=2));
+
+# ╔═╡ 0f329ece-fc74-11ea-1e02-bdbddf551ef3
+@bind day2 Slider(1:size(daily, 2), show_value=true)
+
+# @bind day Clock(0.5)  #animacija pomoću sata 
+
+# ╔═╡ b406eec8-fc77-11ea-1a98-d36d6d3e2393
+log10(maximum(daily[:, day]))
+
+# ╔═╡ 1f30a1ac-fc74-11ea-2abf-abf437006bab
+dates[day2]
+
+# ╔═╡ 24934438-fc74-11ea-12e4-7f7e50f54029
+world_plot = begin 
+	plot(shp_countries, alpha=0.2)
+	scatter!(data.longitude, data.latitude, leg=false, ms=2*log10.(daily[:, day2]), alpha=0.7)
+	xlabel!("latitude")
+	ylabel!("longitude")
+	title!("daily cases per country")
+end
+
+
+# ╔═╡ f7a37706-fcdf-11ea-048a-236b8ed0f1f3
+world_plot
+
+# ╔═╡ 251c06e4-fc77-11ea-1a0f-73139ba11e83
+md"Međutim, uvijek bismo trebali biti oprezni s vizualizacijama poput ovih. Možda bismo trebali crtati slučajeve po glavi stanovnika umjesto apsolutnog broja slučajeva. Ili bismo se trebali podijeliti po površini zemlje? Neke su zemlje, poput Kine i Kanade, u izvornom skupu podataka podijeljene na stateove ili regije - ali druge, poput SAD-a, nisu.
+
+Nažalost, objavljene vizualizacije često skrivaju neke od ovih podataka. Ovo naglašava potrebu da možemo doći do podataka, stvoriti vlastite vizualizacije i donijeti vlastite zaključke."
+
+# ╔═╡ a6098468-8048-4b3b-9394-c1e4f43149ae
+md"# Promotrimo slučajeve COVIDA-19 u Hrvatskoj : "
+
+# ╔═╡ 1738f77d-1309-4937-9266-ada5c943fe7f
+C_countries = [startswith(country, "C") for country in all_countries]
+
+# ╔═╡ 9e3c57ab-bfd8-4c4d-bcc4-23efb467d8a7
+length(C_countries)
+
+# ╔═╡ a5d0624d-a07a-4223-a144-98e205fc03db
+data[C_countries, :]
+
+# ╔═╡ 8ae49f37-b39e-4a5a-94a3-301e526f276c
+filter(x -> x.country == "Croatia", data)
+
+# ╔═╡ 0463f88f-2b84-4806-b21d-3c8534bbd115
+CRO_row = findfirst(==("Croatia"), all_countries)
+
+# ╔═╡ a40e03f2-cc40-445a-af8a-2caf0ee2fe99
+data[CRO_row, :]
+
+# ╔═╡ ec74e3e9-bc32-4e5f-8164-e90fb5665a2b
+data[CRO_row:CRO_row, :]
+
+# ╔═╡ 3e1acd18-3549-4df9-9458-bd4217f4011c
+CRO_data = Vector(data[CRO_row, 5:end])
+
+# ╔═╡ d669bc2b-a0c5-49fb-a988-f66139480595
+scatter(CRO_data, m=:o, alpha=0.5, ms=3, xlabel="dan", ylabel="kumulativni slučajevi", leg=false)
+
+# ╔═╡ bfbe281e-37e6-425f-bb2e-2d4a7f9fb9fa
+begin
+	plot(dates, CRO_data, xrotation=45, leg=:topleft, 
+	    label="CRO podaci", m=:o, ms=3, alpha=0.5)
+	
+	xlabel!("datum")
+	ylabel!("kumulativni slučajevi u Hrvatskoj ")
+	title!("Slučajevi COVID-a 19 u RH")
+end
+
+# ╔═╡ f927f4ca-4f86-40ec-97f6-968e256fb9e3
+begin
+	daily_casesCRO = diff(CRO_data)
+	plot(dates[2:end], daily_casesCRO, m=:o, leg=false, xlabel="dani", ylabel="broj slučajeva u RH dnevno", alpha=0.5)   # koristimo oznake "o"-oblika 
+end
+
+# ╔═╡ c9095f87-8f8f-496e-b29c-43133e6b530f
+
+	running_meanCRO = [mean(daily_casesCRO[i-6:i]) for i in 7:length(daily_casesCRO)]
+
+
+# ╔═╡ a0c0154a-a360-4d21-93bb-25c8d82c4c2c
+begin
+	plot(daily_casesCRO, label="sirovi slučaji dnevno-RH")
+	plot!(running_meanCRO, m=:o, label="tjedni mean-RH", leg=:topleft)
+end
+
+# ╔═╡ 914e078c-30a6-4d0d-9190-10bcc59fd94e
+begin
+	plot(replace(daily_casesCRO, 0 => NaN), 
+		yscale=:log10, 
+		leg=false, m=:o)
+	
+	xlabel!("dani")
+	ylabel!("Potvrđeni slučajevi u RH")
+	title!("Potvrđeni slučajevi COVID-a 19 u RH")
+end
+
+# ╔═╡ 27b23013-260e-438e-8838-15d16a1e835b
+xlims!(0, 100)
+
+# ╔═╡ e74bda65-44c3-4d50-970b-dd5dd8902c29
+exp_periodCRO = 47:60
+
+# ╔═╡ 1b1a2fdb-78ef-4421-8a02-d9809606a86e
+dates[exp_periodCRO]
+
+# ╔═╡ 6068fb19-6e94-4638-a227-42488e0bce30
+modelCRO=modelCRO(x, (c, α)) = c .* exp.(α .* x)
+
+# ╔═╡ 465617e7-b4ef-4853-baf9-fd1b685343df
+begin
+	p0CRO = [0.5, 0.5]  # inicijalni pogodak za parametre - ovo sami zadajemo
+
+	x_dataCRO = exp_periodCRO
+	y_dataCRO = daily_casesCRO[exp_periodCRO]
+	
+	fitCRO= curve_fit(modelCRO, x_dataCRO, y_dataCRO, p0CRO)
+end;
+
+# ╔═╡ 8e413f1b-4f71-4bd1-a237-cb307c7f4550
+parametersCRO = coef(fitCRO)
+
+# ╔═╡ b68fd7c6-f89c-48bc-8461-a9b9984f2658
+begin
+	plot(replace(daily_casesCRO, 0 => NaN), 
+		yscale=:log10, 
+		leg=false, m=:o,
+		xlims=(1, 100), alpha=0.5)
+	
+	line_rangeCRO = 30:70
+	plot!(line_rangeCRO, model(line_rangeCRO, parametersCRO), lw=3, ls=:dash, alpha=0.7)
+	
+	xlabel!("dan")
+	ylabel!("potvrđeni slučajevi u RH")
+	title!("Potvrđeni slučajevi COVIDA-19 u RH")
+end
+
+# ╔═╡ 9f2553e5-c7b5-410f-88be-941c85b476df
+CRO_row
+
+# ╔═╡ 35e89d9f-b36b-4ced-a68b-bce650a760c4
+CRO=data[CRO_row:CRO_row, :]
+
+# ╔═╡ 25e2cf2a-27fa-4c10-9fb6-5f1e8eb6f2c4
+CRO_data
+
+# ╔═╡ c733b65e-c85e-4d1a-8ac8-744ee0bb949a
+dailyCRO = max.(1, diff(Array(CRO[:, 5:end]), dims=2));
+
+# ╔═╡ b4785aeb-6c56-4b87-9161-9b96783c9bf6
+@bind dayCRO Slider(1:size(dailyCRO, 2), show_value=true)
+
+# @bind day Clock(0.5)  #animacija pomoću sata 
+
+# ╔═╡ f29bd4db-5a95-4105-94cf-03700190c4be
+dates[dayCRO]
+
+# ╔═╡ f707f42d-8366-4db5-8891-b2da3c34b18f
+CRO_plot = begin 
+	plot(shp_countries, alpha=0.2)
+	scatter!(CRO.longitude,CRO.latitude, leg=false, ms=2*log10.(dailyCRO[:, dayCRO]), alpha=0.7)
+	xlabel!("Geo. širina")
+	ylabel!("Geo. duljina")
+	title!("dnevni slučajevi za RH")
+end
+
+# ╔═╡ Cell order:
+# ╟─0f87cec6-fc31-11ea-23d2-395e61f38b6f
+# ╟─19f4da16-fc31-11ea-0de9-1dbe668b862d
+# ╟─d3398953-afee-4989-932c-995c3ffc0c40
+# ╟─efa281da-cef9-41bc-923e-625140ce5a07
+# ╠═7617d970-fce4-11ea-08ba-c7eba3e17f62
+# ╠═b0e7f1c6-fce3-11ea-10e5-9101d0f861a2
+# ╠═f7a37706-fcdf-11ea-048a-236b8ed0f1f3
+# ╠═e0493940-8aa7-4733-af72-cd6bc0e37d92
+# ╠═64d9bcea-7c85-421d-8f1e-17ea8ee694da
+# ╠═c460b0c3-6d3b-439b-8cc7-1c58d6547f51
+# ╟─a7369222-fc20-11ea-314d-4d6b0f0f72eb
+# ╠═db4c1f10-7c37-4513-887a-2467ce673458
+# ╟─1620aa9d-7dcd-4686-b7e4-a72cebe315ed
+# ╠═38344160-fc27-11ea-220e-95aa00e4b083
+# ╟─ad43cea2-fc28-11ea-2bc3-a9d81e3766f4
+# ╟─74634537-e2da-4427-96c6-46a3e48364b6
+# ╟─fab64d86-fc28-11ea-0ae1-3ba1b9a14759
+# ╟─3519cf96-fc26-11ea-3386-d97c61ea1b85
+# ╠═a054e048-4fea-487c-9d06-463723c7151c
+# ╠═e9ad97b6-fdef-4f48-bd32-634cfd2ce0e6
+# ╟─aaa7c012-fc1f-11ea-3c6c-89630affb1db
+# ╟─b0eb3918-fc1f-11ea-238b-7f5d23e424bb
+# ╠═68f76d3b-b398-459d-bf39-20bf300dcaa2
+# ╠═20e144f2-fcfb-11ea-010c-97e21eb0d231
+# ╠═2ec98a16-fcfb-11ea-21ad-15f2f5e68248
+# ╠═382cfc62-fcfb-11ea-26aa-2984d0449dcc
+# ╟─34440afc-fc2e-11ea-0484-5b47af235bad
+# ╠═79ba0433-2a31-475a-87c9-14103ebbff16
+# ╟─34ab4a70-0f33-456f-9d65-a239429d784b
+# ╠═5c1ec9ae-fc2e-11ea-397d-937c7ab1edb2
+# ╟─a39589ee-20e3-4f22-bf81-167fd815f6f9
+# ╟─9484ea9e-fc2e-11ea-137c-6da8212da5bd
+# ╟─bcc95a8a-fc2e-11ea-2ccd-3bece42a08e6
+# ╠═ada3ceb4-fc2e-11ea-2cbf-399430fa18b5
+# ╟─1633abe8-fc2f-11ea-2c7e-21b3348a3569
+# ╟─ed383524-e0c0-4da2-9a98-ca75aadd2c9e
+# ╠═90810d7e-fcfb-11ea-396a-35543dcc1e06
+# ╠═977e1a2c-fcfb-11ea-08e9-cd656a631778
+# ╠═9ee79840-30ff-4c92-97f4-e178caceceaf
+# ╠═99d5a138-fc30-11ea-2977-71732ca3aead
+# ╟─450b4902-fc30-11ea-321d-29faf6188ff5
+# ╠═4f423a75-43da-486f-ac2a-7220032dac9f
+# ╟─a8b2db96-fc30-11ea-2eea-b938a3a430fb
+# ╟─c400ce4e-fc30-11ea-13b1-b54cf8f5630e
+# ╠═7b2496b0-fc35-11ea-0e78-473e5e8eac44
+# ╟─8990f13a-fc35-11ea-338f-0955eeb23c3c
+# ╟─a772eadc-fc35-11ea-3d38-4b121f88f1d7
+# ╠═16a79308-fc36-11ea-16e5-e1087d7ebbda
+# ╠═a41db8ea-f0e0-461f-a298-bdcea42a67f3
+# ╠═f75e1992-fcfb-11ea-1123-b59bf888eac3
+# ╟─67eebb7e-fc36-11ea-03ef-bd6966487bb5
+# ╠═7b5db0f4-fc36-11ea-09a5-49def64f4c79
+# ╠═a26b8742-6a16-445a-ae77-25a4189c0f14
+# ╠═f099424c-0e22-42fb-894c-d8c2a65715fb
+# ╟─6a56650c-bb47-4486-8c8b-9feb06f155aa
+# ╟─7e7d14a2-fc37-11ea-3f1a-870ca98c4b75
+# ╟─75d2dc66-fc47-11ea-0e35-05f9cf38e901
+# ╟─b3880f40-fc36-11ea-074a-edc51adeb6f0
+# ╟─6de0800c-fc37-11ea-0d94-2b6f8f66964d
+# ╠═bb6316b7-23fb-44a3-b64a-dfb71a7df011
+# ╠═0c098923-b016-4c65-9a37-6b7b56b13a0c
+# ╟─546a40eb-7897-485d-a1b5-c4dfae0a4861
+# ╠═cbd9c1aa-fc37-11ea-29d9-e3361406796f
+# ╠═9e23b0e2-ac13-4d19-a3f9-4a655a1e9f14
+# ╠═25c79620-14f4-45a7-b120-05ec72cb77e9
+# ╠═31dc4e46-4839-4f01-b383-1a1189aeb0e6
+# ╟─ee27bd98-fc37-11ea-163c-1365e194fc2e
+# ╠═f5c29f0d-937f-4731-8f87-0405ebc966f5
+# ╠═36c37b4d-eb23-4deb-a593-e511eccd9204
+# ╟─ebf76226-66c5-46d0-9fbd-ab4252b3e7b9
+# ╟─511eb51e-fc38-11ea-0492-19532da809de
+# ╟─d228e232-fc39-11ea-1569-a31b817118c4
+# ╠═dbaacbb6-fc3b-11ea-0a42-a9792e8a6c4c
+# ╟─12900562-fc3a-11ea-25e1-f7c91a6940e5
+# ╠═19bdf146-fc3c-11ea-3c60-bf7823c43a1d
+# ╠═be868a52-fc3b-11ea-0b60-7fea05ffe8e9
+# ╟─0b01120c-fc3d-11ea-1381-8bab939e6214
+# ╟─252eff18-fc3d-11ea-0c18-7b130ada882e
+# ╟─9626d74a-fc3d-11ea-2ab3-978dc46c0f1f
+# ╠═4358c348-91aa-4c76-a443-0a9cefce0e83
+# ╟─687409a2-fc43-11ea-03e0-d9a7a48165a8
+# ╠═4f23c8fc-fc43-11ea-0e73-e5f89d14155c
+# ╟─07282688-fc3e-11ea-2f9e-5b0581061e65
+# ╠═91f99062-fc43-11ea-1b0e-afe8aa8a1c3d
+# ╠═210cee94-fc3e-11ea-1a6e-7f88270354e1
+# ╟─2f254a9e-fc3e-11ea-2c02-75ed59f41903
+# ╟─84f5c776-fce0-11ea-2d52-39c51d4ab6b5
+# ╟─539c951c-fc48-11ea-2293-457b7717ea4d
+# ╠═b33e97f2-fce0-11ea-2b4d-ffd7ed7000f8
+# ╠═d52fc8fe-fce0-11ea-0a04-b146ee2dbe80
+# ╟─c50b5e42-fce1-11ea-1667-91c56ea80dcc
+# ╠═3060bfa8-fce1-11ea-1047-db0dc06485a2
+# ╟─62bdc04a-fce1-11ea-1724-bfc4bc4789d1
+# ╠═6bc8cc20-fce1-11ea-2180-0fa69e86741f
+# ╟─287f0fa8-fc44-11ea-2788-9f3ac4ee6d2b
+# ╟─3edd2a22-fc4a-11ea-07e5-55ca6d7639e8
+# ╠═c5ad4d40-fc57-11ea-23cb-e55487bc6f7a
+# ╟─57a9bb06-fc4a-11ea-2665-7f97026981dc
+# ╠═80138b30-fc4a-11ea-0e15-b54cf6b402df
+# ╟─8709f208-fc4a-11ea-0203-e13eae5f0d93
+# ╠═a29c8ad0-fc4a-11ea-14c7-71435769b73e
+# ╠═4e4cca22-fc4c-11ea-12ae-2b51545799ec
+# ╠═16981da0-fc4d-11ea-37a2-535aa014a298
+# ╠═a9c39dbe-fc4d-11ea-2e86-4992896e2abb
+# ╟─b93b88b0-fc4d-11ea-0c45-8f64983f8b5c
+# ╠═7ec28cd0-fc87-11ea-2de5-1959ea5dc37c
+# ╠═ada44a56-fc56-11ea-2ab7-fb649be7e066
+# ╠═b3e1ebf8-fc56-11ea-05b8-ed0b9e50503d
+# ╟─f8e754ee-fc73-11ea-0c7f-cdc760ab3e94
+# ╠═39982810-fc76-11ea-01c3-3987cfc2fd3c
+# ╟─0f329ece-fc74-11ea-1e02-bdbddf551ef3
+# ╟─b406eec8-fc77-11ea-1a98-d36d6d3e2393
+# ╟─1f30a1ac-fc74-11ea-2abf-abf437006bab
+# ╠═24934438-fc74-11ea-12e4-7f7e50f54029
+# ╟─251c06e4-fc77-11ea-1a0f-73139ba11e83
+# ╟─a6098468-8048-4b3b-9394-c1e4f43149ae
+# ╠═1738f77d-1309-4937-9266-ada5c943fe7f
+# ╠═9e3c57ab-bfd8-4c4d-bcc4-23efb467d8a7
+# ╠═a5d0624d-a07a-4223-a144-98e205fc03db
+# ╠═8ae49f37-b39e-4a5a-94a3-301e526f276c
+# ╠═0463f88f-2b84-4806-b21d-3c8534bbd115
+# ╠═a40e03f2-cc40-445a-af8a-2caf0ee2fe99
+# ╠═ec74e3e9-bc32-4e5f-8164-e90fb5665a2b
+# ╠═3e1acd18-3549-4df9-9458-bd4217f4011c
+# ╠═d669bc2b-a0c5-49fb-a988-f66139480595
+# ╠═bfbe281e-37e6-425f-bb2e-2d4a7f9fb9fa
+# ╠═f927f4ca-4f86-40ec-97f6-968e256fb9e3
+# ╠═c9095f87-8f8f-496e-b29c-43133e6b530f
+# ╠═a0c0154a-a360-4d21-93bb-25c8d82c4c2c
+# ╠═914e078c-30a6-4d0d-9190-10bcc59fd94e
+# ╠═27b23013-260e-438e-8838-15d16a1e835b
+# ╠═e74bda65-44c3-4d50-970b-dd5dd8902c29
+# ╠═1b1a2fdb-78ef-4421-8a02-d9809606a86e
+# ╠═6068fb19-6e94-4638-a227-42488e0bce30
+# ╠═465617e7-b4ef-4853-baf9-fd1b685343df
+# ╠═8e413f1b-4f71-4bd1-a237-cb307c7f4550
+# ╠═b68fd7c6-f89c-48bc-8461-a9b9984f2658
+# ╠═9f2553e5-c7b5-410f-88be-941c85b476df
+# ╠═35e89d9f-b36b-4ced-a68b-bce650a760c4
+# ╠═25e2cf2a-27fa-4c10-9fb6-5f1e8eb6f2c4
+# ╠═c733b65e-c85e-4d1a-8ac8-744ee0bb949a
+# ╠═b4785aeb-6c56-4b87-9161-9b96783c9bf6
+# ╠═f29bd4db-5a95-4105-94cf-03700190c4be
+# ╠═f707f42d-8366-4db5-8891-b2da3c34b18f
